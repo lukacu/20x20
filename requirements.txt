@@ -1,0 +1,14 @@
+lupa==1.13
+numpy==1.23.4
+opencv-python==4.6.0.66
+Pillow==9.3.0
+bitstring==3.1.9
+cffi==1.14.6
+cryptography==3.4.8
+ecdsa==0.17.0
+esptool==3.1
+nodemcu-uploader==1.0.0
+pycparser==2.20
+pyserial==3.5
+reedsolo==1.5.4
+six==1.16.0

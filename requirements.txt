@@ -12,3 +12,4 @@ pycparser==2.20
 pyserial==3.5
 reedsolo==1.5.4
 six==1.16.0
+requests==2.28.1

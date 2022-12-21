@@ -16,3 +16,6 @@ Repository consists of several parts
  * Python `tools` that are run on a computer and provide a simple emulator, a converter of images to sprites and a tool that uploads files to the micro controller. Install requirements from the `requirements.txt` file to use them.
  * Some graphics `resources`.
 
+## Buidling NodeMCU firmware
+
+Firmware can be built using the [clould builder](https://nodemcu-build.com/). This project assumes that the following modules are enabled when building the firmware: `crypto, color, encoder, file, gpio, http, net, node, pixbuf, sjson, tmr, wifi, ws2812`.

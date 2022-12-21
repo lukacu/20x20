@@ -1,13 +1,17 @@
 -- Brownian motion visualization
 
-function brownian(state, screen)
+local function brownian(state, screen)
 
-    if state == nil or state.counter == 0 then
-        state = { counter = 300,
+    if state == nil then
+        state = { counter = 1000,
             x = node.random(1, screen.width),
             y = node.random(1, screen.height)
         }   
         screen.buffer:fill(0, 0, 0)
+    end
+
+    if state.counter == 0 then
+        return nil
     end
 
     screen.buffer:fade(2)
@@ -19,7 +23,7 @@ function brownian(state, screen)
     g = node.random(0, 255)
     b = node.random(0, 255)
     
-    screen.set(state.x, state.y, r, g, b)
+    screen:set(state.x, state.y, r, g, b)
 
     state.counter = state.counter - 1
 
@@ -27,3 +31,4 @@ function brownian(state, screen)
 
 end
 
+return brownian;

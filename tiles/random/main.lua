@@ -1,6 +1,6 @@
 -- Painting random pixels
 
-function random(state, screen)
+local function random(state, screen)
 
     if state == nil or state == 0 then
         state = 500
@@ -17,3 +17,4 @@ function random(state, screen)
 
 end
 
+return random;

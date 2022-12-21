@@ -9,7 +9,6 @@ from PIL import Image, ImageColor
 from PIL import GifImagePlugin
 
 import numpy as np
-import cv2
 
 def main():
 
@@ -19,6 +18,7 @@ def main():
     parser.add_argument('--height', default=None, type=int, help='Tile height')
     parser.add_argument('--select', default=None, help='Limit selected tiles')
     parser.add_argument('--background', default="black", help='Background color')
+    parser.add_argument('--format', choices=("rgb", "rgbw", "grb", "grbw"), default="grb")
     parser.add_argument('filename') 
 
     args = parser.parse_args()
@@ -58,6 +58,13 @@ def main():
                     frame = source.crop((x, y, x + tile_width, y + tile_height)).convert()
                     frame = Image.alpha_composite(background, frame)
                     frame = np.asarray(frame)[:, :, 0:3]
+                    if args.format == "grb":
+                        frame = frame[:, :, (1, 0, 2)]
+                    elif args.format == "grbw":
+                        frame = frame[:, :, (1, 0, 2)]
+                        frame = np.stack((frame, np.mean(frame, axis=2, keepdims=True)), axis=2)
+                    elif args.format == "rgbw":
+                        frame = np.stack((frame, np.mean(frame, axis=2, keepdims=True)), axis=2)
                     content += frame.tobytes()
                     count += 1
             tile += 1

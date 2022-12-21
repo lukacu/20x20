@@ -1,5 +1,6 @@
 # Compiled Lua sources
 luac.out
+*.lc
 
 # luarocks build files
 *.src.rock
@@ -42,3 +43,5 @@ luac.out
 *.pyc
 __pycache__
 *.dat
+
+

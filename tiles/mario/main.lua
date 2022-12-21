@@ -1,10 +1,12 @@
 -- Super Mario walking
 
-function mario(state, screen)
+local function mario(state, screen)
 
     if state == nil then
+        local db = Sprites.open("mario.dat")
         state = {
-            sprites = Sprites.load("mario.dat"),
+            sprites = db:load(1, 8),
+            cache = nil,
             count = 0, 
             direction = 0
         }
@@ -16,7 +18,7 @@ function mario(state, screen)
         if state.count % 10 < 5 then
             i = i + 1
         end
-        state.sprites:display(screen, i, 0, 0)        
+        state.sprites:display(screen, i, 1, 1)        
     end
 
     if state.count == 40 then
@@ -30,3 +32,4 @@ function mario(state, screen)
 
 end
 
+return mario;

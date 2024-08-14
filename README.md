@@ -13,9 +13,10 @@ Contributions are welcome, you can provide new visualizations (tiles) or enhance
 Repository consists of several parts
 
  * Lua code that is run on a Wemos D1 micro controller which controls an addressable LED strip of 400 diodes. This are the `core` and `tiles` folders.
+ * The `firmware` folder contains code for building a suitable firmware image.
  * Python `tools` that are run on a computer and provide a simple emulator, a converter of images to sprites and a tool that uploads files to the micro controller. Install requirements from the `requirements.txt` file to use them.
  * Some graphics `resources`.
 
 ## Buidling NodeMCU firmware
 
-Firmware can be built using the [clould builder](https://nodemcu-build.com/). This project assumes that the following modules are enabled when building the firmware: `crypto, color, encoder, file, gpio, http, net, node, pixbuf, sjson, tmr, wifi, ws2812`.
+Since the code requires custom native modules, the firmware should be built locally using the [https://hub.docker.com/r/marcelstoer/nodemcu-build](nodemcu-build Docker container). Use the `build_firmware.sh` script to build a suitable binary image.

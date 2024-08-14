@@ -8,6 +8,7 @@ import json
 import requests
 import concurrent.futures
 import traceback
+import typing
 
 import cv2 as cv
 import numpy as np
@@ -28,10 +29,11 @@ def exception_printer(func):
 
 class Environment():
 
-    def __init__(self, root) -> None:
+    def __init__(self, root, search=None) -> None:
         self._lua = LuaRuntime(unpack_returned_tuples=True, encoding=None)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self._root = root
+        self._search = search if search is not None else []
 
     @property
     def lua(self) -> LuaRuntime:
@@ -40,6 +42,10 @@ class Environment():
     @property
     def root(self) -> str:
         return self._root
+
+    @property
+    def search(self) -> typing.List[str]:
+        return self._search
 
     @property
     def executor(self) -> concurrent.futures.ThreadPoolExecutor:
@@ -120,11 +126,14 @@ class JSON(Module):
                         k = k.encode("ascii")
                     if isinstance(v, dict):
                         v = convert(v)
+                    if isinstance(v, str):
+                        v = v.encode("ascii")
                     c[k] = v
                 return self._environment.lua.table_from(c)
 
             o = json.loads(self._buffer)
             self._buffer = b""
+
             o = convert(o)
             return o
 
@@ -163,9 +172,17 @@ class Filesystem(Module):
     def __init__(self, environment: Environment) -> None:
         super().__init__(environment)
 
-
     def open(self, filename, mode):
-        return File(open(os.path.join(self.environment.root, filename.decode("ascii")), mode.decode("ascii") + "b"))
+        absolute = None
+        for dir in self.environment.search:
+            if os.path.isfile(os.path.join(dir, filename.decode("ascii"))):
+                absolute = os.path.join(dir, filename.decode("ascii"))
+                break
+
+        if absolute is None:
+            raise IOError("File {} not found".format(filename))
+
+        return File(open(absolute, mode.decode("ascii") + "b"))
 
 class Buffer():
 
@@ -178,14 +195,16 @@ class Buffer():
 
     def set(self, i, *args):
         i = i - 1
+
         if i < 0 or i >= self._buffer.shape[0]:
             raise RuntimeError("Out of bounds - index %d not within 1-%d" % (i+1, self._buffer.shape[0]))
 
         if isinstance(args[0], bytes):
             data = np.frombuffer(args[0], dtype=np.uint8)
-            data = data.reshape((int(data.shape[0] / 3), 3))
+            data = data.reshape((int(data.shape[0] / self.channels()), self.channels()))
 
             if data.shape[0] > self._buffer.shape[0] - i:
+                print(data.shape)
                 raise RuntimeError("Out of bounds - index %d not within 1-%d" % (i+1, self._buffer.shape[0]))
 
             buffer_start = min(max(i, 0), self._buffer.shape[0])
@@ -213,6 +232,9 @@ class Buffer():
         for i, v in enumerate(args):
             self._buffer[:, i] = v
 
+    def dump(self):
+        return self._buffer.flatten().tobytes()
+
     def fade(self, d):
         self._buffer = np.clip(self._buffer.astype(np.int16) / d, 0, 255).astype(np.uint8)
 
@@ -224,43 +246,88 @@ class Buffer():
 
     def replace(self, input, offset = 1):
         assert self.channels() == input.channels()
-        length = input.size() - offset + 1
-        self._buffer[offset-1:length+offset, :] = input._buffer[0:length, :]
+        length = input.size()
+        self._buffer[offset-1:length+offset-1, :] = input._buffer
 
-    def map(self, f, buffer, offset = 1, length = -1):
-        if length == -1:
-            length = min(self.size() + offset - 1, buffer.size())
-        for i in range(0, length):
-            self.set(i + 1, *f(*buffer._buffer[i + offset-1, :].tolist()))
+    def map(self, f, b1, o1 = 1, end = -1, b2 = None, o2 = -1):
+        if end < 0:
+            end = b1.size() + o1 + end
+        for i in range(0, end - o1 + 1):
+            args = b1._buffer[i + o1-1, :].tolist()
+            if b2 is not None:
+                args += b2._buffer[i + o2-1, :].tolist()
+            self.set(i + 1, *f(*args))
 
-class Screen():
+    def sub(self, i, j = -1):
+        view = Buffer(0, 1)
+        if i < 0:
+            i = self.size() + i
+        if j < 0:
+            j = self.size() + j
+        view._buffer = self._buffer[i:j, :]
+        return view
 
-    def __init__(self, width, height):
-        self._width = width
-        self._height = height
-        self._buffer = Buffer(width * height)
+class Operations():
+    """CTypes wrapper for the custom pixmod module"""
+    
+    def __init__(self) -> None:
+        import ctypes
+        
+        library_path = os.path.join(root, "pixmod.so")
+        
+        # Check if the shared library exists and is not older than the source file
+        if not os.path.exists(library_path) or os.path.getmtime(library_path) < os.path.getmtime(os.path.join(root, "firmware", "pixmod.c")):
+            # Try compiling the shared library using GCC
+            compile_command = "gcc -Wall -pedantic -shared -D_EMULATOR_MODE_ -fPIC -o %s %s" % (library_path, os.path.join(root, "firmware", "pixmod.c"))
+            print(compile_command)
+            os.system(compile_command)
+            
+            #os.system("gcc -C %s" % os.path.join(root, "pixmod"))
+            #raise FileNotFoundError("Could not find the shared library at %s" % library_path)
+        # Load the shared library
 
-    @property
-    def width(self):
-        return 20
+        self._lib = ctypes.CDLL(library_path)
+        
+        # Define the function signature
+        self._lib.set.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.set.restype = None
+        
+        self._lib.line.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.line.restype = None
+        
+        self._lib.add.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.add.restype = None
+        
+        self._lib.fill.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.fill.restype = None
+        
+        
+        
+    def set(self, buffer, w, h, x, y, r, g, b):
+        import ctypes
+        buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.set(buf, w, h, buffer.channels(), x, y, r, g, b)
+        
+    def line(self, buffer, w, h, x1, y1, x2, y2, r, g, b):
+        import ctypes
+        buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.line(buf, w, h, buffer.channels(), x1, y1, x2, y2, r, g, b)
 
-    @property
-    def height(self):
-        return 20
+    def add(self, buffer, w, h, value):
+        import ctypes
+        buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.add(buf, w, h, buffer.channels(), value)
 
-    @property
-    def buffer(self):
-        return self._buffer
-
-    def set(self, x, y, r, g, b):
-        i = (x-1) + (y-1) * self._width + 1
-        self._buffer.set(i, r, g, b)
+    def fill(self, buffer, w, h, rx, ry, rw, rh, r, g, b):
+        import ctypes
+        buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.fill(buf, w, h, buffer.channels(), rx, ry, rw, rh, r, g, b)
 
 def main():
 
     name = sys.argv[1]
 
-    env = Environment(os.path.join(root, "tiles", name))
+    env = Environment(os.path.join(root, "tiles", name), [os.path.join(root, "tiles", name), os.path.join(root, "core")])
 
     def load_script(lua, filename):
         with open(filename, "r") as source:
@@ -268,6 +335,7 @@ def main():
             lua.execute(source)
 
     env.lua.globals()[b"pixbuf"] = Buffer
+    env.lua.globals()[b"pixmod"] = Operations()
     env.lua.globals()[b"sjson"] = JSON(env)
     env.lua.globals()[b"http"] = HTTP(env)
 
@@ -278,9 +346,10 @@ def main():
 
     env.lua.execute('dofile("%s")' % os.path.join(root, "core", "utilities.lua"))
     env.lua.execute('dofile("%s")' % os.path.join(root, "core", "sprites.lua"))
-    main, _ = env.lua.eval('require("%s")' % os.path.join("main"))
+    env.lua.execute('dofile("%s")' % os.path.join(root, "core", "font.lua"))
 
-    screen = Screen(20, 20)
+    screen = env.lua.eval('Screen.create(20, 20)')    
+    main, _ = env.lua.eval('require("%s")' % os.path.join("main"))
 
     state = None
 

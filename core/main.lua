@@ -3,34 +3,22 @@ local framerate = 10
 
 local rinfo, einfo = node.bootreason()
 
-print(rinfo, einfo)
-
-if rinfo == 4 or (einfo > 0 and einfo < 4) then
-  print("Halting execution due to reset")
-  return
+function load_sprites()
+  m = require("sprites");
+  package.loaded["sprites"] = nil;
+  return m;
 end
 
-dofile("sprites.lua")
-
-do
-	Screen = {}
-	local mt = { __index = Screen }
-
-	function Screen.create(width, height)
-        local buffer = pixbuf.newBuffer(width * height, 3)
-        buffer:fill(0, 0, 0)
-		return setmetatable({
-			  width = width,
-        height = height,
-        buffer = buffer
-		}, mt)
-	end
-
-	function Screen:set(x, y, r, g, b)
-		local buffer = self.buffer
-        buffer:set((y-1) * self.width + x, r, g, b)
-	end
+function load_font()
+  m = require("font");
+  package.loaded["font"] = nil;
+  return m;
 end
+
+--if rinfo == 4 or (einfo > 0 and einfo < 4) then
+--  print("Halting execution due to reset")
+--  return
+--end
 
 local function pass(state, screen)
     return state
@@ -38,6 +26,7 @@ end
 
 local screen = Screen.create(20, 20)
 local current = pass
+local current_name = ""
 local state = nil
 local timeout = node.random(framerate * 20, framerate * 60)
 
@@ -136,21 +125,45 @@ end
 
 local tiles = {}
 
+print(node.egc.meminfo())
+
+
+
 local l = file.list();
 for k,v in pairs(l) do
   if k:match("^tile_(.*).lua$") then
-    local m = require(string.sub(k, 1, -5))
-    tiles[#tiles+1] = {handle = m};
-    print("Found tile " .. string.sub(k, 6, -5) .. " = " .. #tiles)
+    local name = string.sub(k, 1, -5)
+    require(name);
+    package.loaded[name] = nil;
+    tiles[#tiles+1] = {name=name};
   end
 end 
 
+print(node.egc.meminfo())
+
+
+
+function list_tiles()
+  for k,v in pairs(tiles) do
+    print("Tile " .. v.name .. " = " .. k)
+  end
+end
+
 print("Found " .. #tiles .. " tiles")
+
+list_tiles()
 
 --setup_wifi()
 
-local ok = true
+print(node.egc.meminfo())
+
 local loop = nil
+
+function list_tiles()
+  for k,v in pairs(tiles) do
+    print("Tile " .. v.name .. " = " .. k)
+  end
+end
 
 function run(i) 
   if loop ~= nil then
@@ -161,7 +174,7 @@ function run(i)
     if table.getn(tiles) > 0 then
       i = node.random(1, table.getn(tiles))
     else 
-      i = -1
+      i = 0
     end
   end
 
@@ -170,29 +183,45 @@ function run(i)
     state = nil
     return
   else
-    current = tiles[i].handle;
+    package.loaded[current_name] = nil
+    current_name = tiles[i].name
+    current = require(current_name);
     state = nil;
     timeout = node.random(framerate * 20, framerate * 60)
   end
 
   loop = tmr.create()
   loop:alarm(1000 / framerate, tmr.ALARM_AUTO, function()
-    --ok, state = pcall(current(state, screen))
     state = current(state, screen)
     ws2812.write(screen.buffer)
     if not ok then 
-      print(state)
-      run(-1)
+      print(current_name, state)
+      state = nil
+      run(0)
+      return
     end
     timeout = timeout - 1
     if timeout < 1 then
       state = nil
     end
-    if not ok or state == nil then
-        print("restart", state)
+    if state == nil then
         run()
     end
   end)
 end
+
+if rinfo == 4 or (einfo > 0 and einfo < 4) then
+  print("Halting auto start due to previous error")
+  return
+end
+
+local onerror = function(s)
+  print("Error: "..s)
+  -- TODO: perhaps remove faulty tile in production mode?
+  state = nil
+  run(0)
+end
+
+node.setonerror(onerror)
 
 tmr.create():alarm(500, tmr.ALARM_SINGLE, function () run() end)

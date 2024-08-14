@@ -1,4 +1,43 @@
 
+do
+	Screen = {}
+	local mt = { __index = Screen }
+
+	function Screen.create(width, height)
+        local buffer = pixbuf.newBuffer(width * height, 3)
+        buffer:fill(0, 0, 0)
+		return setmetatable({
+			  width = width,
+        height = height,
+        buffer = buffer
+		}, mt)
+	end
+
+	function Screen:set(x, y, r, g, b)
+		local buffer = self.buffer
+        pixmod.set(buffer, self.width, self.height, x, y, r, g, b)
+	end
+
+    function Screen:line(x1, y1, x2, y2, r, g, b)
+        local buffer = self.buffer
+        pixmod.line(buffer, self.width, self.height, x1, y1, x2, y2, r, g, b)
+    end
+
+    function Screen:fill(x, y, w, h, r, g, b)
+        local buffer = self.buffer
+        pixmod.fill(buffer, self.width, self.height, x, y, w, h, r, g, b)
+    end
+
+    function Screen:clear()
+        self:fill(1, 1, self.width, self.height, 0, 0, 0)
+    end
+
+    function Screen:add(v)
+        local buffer = self.buffer
+        pixmod.add(buffer, self.width, self.height, v)
+    end
+end
+
 function deepcopy(object)
     local lookup_table = {}
     local function _copy(object)
@@ -15,4 +54,8 @@ function deepcopy(object)
         return setmetatable(new_table, getmetatable(object))
     end
     return _copy(object)
+end
+
+function isprefix(s, prefix)
+    return string.sub(s,1,string.len(prefix)) == prefix
 end

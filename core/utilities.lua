@@ -36,6 +36,16 @@ do
         local buffer = self.buffer
         pixmod.add(buffer, self.width, self.height, v)
     end
+
+    function Screen:blit(src, src_w, src_h, x, y, w, h, dx, dy)
+        local screen = self.buffer
+        pixmod.blit(src, src_w, src_h, screen, self.width, self.height, x, y, w, h, dx, dy)
+    end
+
+    function Screen:blit_color(src, src_w, src_h, x, y, w, h, dx, dy, r, g, b)
+        local screen = self.buffer
+        pixmod.blit_color(src, src_w, src_h, screen, self.width, self.height, x, y, w, h, dx, dy, r, g, b)
+    end
 end
 
 function deepcopy(object)

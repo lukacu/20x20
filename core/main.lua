@@ -20,6 +20,8 @@ end
 --  return
 --end
 
+dofile("utilities.lua")
+
 local function pass(state, screen)
     return state
 end
@@ -127,8 +129,6 @@ local tiles = {}
 
 print(node.egc.meminfo())
 
-
-
 local l = file.list();
 for k,v in pairs(l) do
   if k:match("^tile_(.*).lua$") then
@@ -141,8 +141,6 @@ end
 
 print(node.egc.meminfo())
 
-
-
 function list_tiles()
   for k,v in pairs(tiles) do
     print("Tile " .. v.name .. " = " .. k)
@@ -153,7 +151,7 @@ print("Found " .. #tiles .. " tiles")
 
 list_tiles()
 
---setup_wifi()
+setup_wifi()
 
 print(node.egc.meminfo())
 

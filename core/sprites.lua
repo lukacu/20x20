@@ -27,11 +27,12 @@ do
         local length = self.width * self.height * 3 * count
         local data = nil
 
-        if type(source) == "string" then
+        if type(source) == "Buffer" then
             data = source:sub(offset + 1, offset + length)
         else
             source:seek("set", offset + 6)
-            data = source:read(length)
+            data = pixbuf.newBuffer(self.width*self.height*count, 3)
+            data:set(1, source:read(length))
         end
 
 		return setmetatable({
@@ -48,44 +49,16 @@ do
         if index < 1 or index > self.count then
             return
         end
-
-        local dst_left = math.min(math.max(x, 1), screen.width)
-        local dst_top = math.min(math.max(y, 1), screen.height)
-
-        local dst_right = math.min(math.max(x + self.width, 1), screen.width)
-        local dst_bottom = math.min(math.max(y + self.height, 1), screen.height)
-
-        if dst_left == dst_right or dst_top == dst_bottom then
-            return
-        end
-
-        local src_left = math.min(math.max(-dst_left - x + 1, 1), self.width)
-        local src_top = math.min(math.max(-dst_top - y + 1, 1), self.height)
-
-        local src_right = math.min(math.max(src_left + dst_right - dst_left, 1), self.width)
-        local src_bottom = math.min(math.max(src_top + dst_bottom - dst_top, 1), self.height)
-
-        local src_offset = self.width * self.height * 3 * (index - 1) + (src_left-1) * 3
-        local dst_offset = (dst_left-1) + (dst_top-1) * screen.width + 1
-
-        local line = src_right - src_left + 1
-        local lines = src_bottom - src_top
-
-        if type(data) == "string" then
-            for i = 0, lines do
-                local soffset = src_offset + ((i + src_top - 1) * self.width) * 3
-                local doffset = dst_offset + ((i + dst_top - 1) * screen.width)
-                screen.buffer:set(doffset, data:sub(soffset+1, soffset + 3 * line))
-            end	
+        if type(data) == "Buffer" then
+            screen:blit(data, self.width, self.height * self.count, 1, 1 + (index-1) * self.height, self.width, self.height, x, y)
         else
-            for i = 0, lines do
-                local soffset = src_offset + ((i + src_top - 1) * self.width) * 3
-                local doffset = dst_offset + ((i + dst_top - 1) * screen.width)
-                data:seek("set", soffset + 6)
-                screen.buffer:set(doffset, data:read(3 * line))
-            end	
+            tmp = self:load(index, 1)
+            tmp:display(screen, 1, x, y)
         end
+
 	end
+
+    return Sprites
 end
 
 

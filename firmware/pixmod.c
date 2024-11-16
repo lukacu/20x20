@@ -26,6 +26,44 @@ typedef struct pixelbuffer
   uint8_t *data;
 } pixelbuffer_t;
 
+typedef struct rect
+{
+  int x;
+  int y;
+  int w;
+  int h;
+} rect_t;
+
+static int max(int a, int b)
+{
+  return a > b ? a : b;
+}
+
+static int min(int a, int b)
+{
+  return a < b ? a : b;
+}
+
+
+static rect_t rect(int x, int y, int w, int h)
+{
+  rect_t r;
+  r.x = x;
+  r.y = y;
+  r.w = w;
+  r.h = h;
+  return r;
+}
+
+static rect_t rect_intersection(rect_t *r1, rect_t *r2)
+{
+  int x = max(r1->x, r2->x);
+  int y = max(r1->y, r2->y);
+  int w = min(r1->x + r1->w, r2->x + r2->w) - x;
+  int h = min(r1->y + r1->h, r2->y + r2->h) - y;
+  return rect(x, y, w, h);
+}
+
 #ifndef _EMULATOR_MODE_
 
 #include "pixbuf.h"
@@ -79,6 +117,32 @@ static pixelbuffer_t wrap_buffer(uint8_t *data, int width, int height, int bpp, 
   return pb;
 }
 #endif
+
+
+static void print_buffer(pixelbuffer_t *pb)
+{
+  printf("width: %d, height: %d, stride: %d, bpp: %d\n", pb->width, pb->height, pb->stride, pb->bpp);
+}
+
+static void print_rect(rect_t *r)
+{
+  printf("x: %d, y: %d, w: %d, h: %d\n", r->x, r->y, r->w, r->h);
+}
+
+static pixelbuffer_t cut_buffer(pixelbuffer_t *pb, int x, int y, int w, int h)
+{
+  pixelbuffer_t pb2;
+  assert(pb != NULL);
+  assert(x >= 0 && y >= 0 && w > 0 && h > 0);
+  assert(x + w <= pb->width && y + h <= pb->height);
+  pb2.width = w;
+  pb2.height = h;
+  // Correct stride for cut buffer
+  pb2.stride = pb->stride;
+  pb2.data = pb->data + y * pb->stride + x * pb->bpp;
+  pb2.bpp = pb->bpp;
+  return pb2;
+}
 
 static uint32_t _color_pack(int r, int g, int b)
 {
@@ -192,69 +256,151 @@ static void _pixmod_fill(pixelbuffer_t *pixbuf, int x, int y, int width, int hei
   }
 }
 
-
-/*
-static int pixmod_mask(lua_State *L)
+static void _pixmod_copy(pixelbuffer_t *src, pixelbuffer_t *dst)
 {
-  PIXBUF *pixbuf = (PIXBUF *)luaL_checkudata(L, 1, "pixbuf.buffer");
-  PIXBUF *mask = (PIXBUF *)luaL_checkudata(L, 2, "pixbuf.buffer");
-  int x = luaL_checkinteger(L, 3);
-  int y = luaL_checkinteger(L, 4);
-  int w = luaL_checkinteger(L, 5);
-  int h = luaL_checkinteger(L, 6);
-  int dx = luaL_checkinteger(L, 7);
-  int dy = luaL_checkinteger(L, 8);
-  int dw = luaL_checkinteger(L, 9);
-  int dh = luaL_checkinteger(L, 10);
-  pixbuf_mask(pixbuf, mask, x, y);
-  return 0;
-}
-
-// bilt one image to another, both images must be the same type
-static int pixmod_bilt(lua_State *L)
-{
-  PIXBUF *src = (PIXBUF *)luaL_checkudata(L, 1, "pixbuf.buffer");
-  int sw = luaL_checkinteger(L, 2);
-  int sh = luaL_checkinteger(L, 3);
-  PIXBUF *dst = (PIXBUF *)luaL_checkudata(L, 4, "pixbuf.buffer");
-  int dw = luaL_checkinteger(L, 5);
-  int dh = luaL_checkinteger(L, 6);
-
-  int x = luaL_checkinteger(L, 7);
-  int y = luaL_checkinteger(L, 8);
-  int w = luaL_checkinteger(L, 9);
-  int h = luaL_checkinteger(L, 10);
-
-  for (int i = 0; i < h; i++)
+  if (src->width != dst->width || src->height != dst->height)
+    return;
+  for (int i = 0; i < src->height; i++)
   {
-    for (int j = 0; j < w; j++)
+    for (int j = 0; j < src->width; j++)
     {
-      int src_x = j * sw / w;
-      int src_y = i * sh / h;
-      int dst_x = x + j;
-      int dst_y = y + i;
-      uint32_t color = pixbuf_get(src, src_x, src_y);
-      pixbuf_set(dst, dst_x, dst_y, color);
+      uint32_t color = _pixmod_get(src, j, i);
+      _pixmod_set(dst, j, i, color);
     }
   }
-
-  return 1;
 }
 
-static int pixmod_fill(lua_State *L)
+static void _pixmod_blit(pixelbuffer_t *src, pixelbuffer_t *dst, int x, int y, int w, int h, int dx, int dy)
 {
-  PIXBUF *pixbuf = (PIXBUF *)luaL_checkudata(L, 1, "pixbuf.buffer");
-  int w = luaL_checkinteger(L, 2);
-  int h = luaL_checkinteger(L, 3);
-  int x = luaL_checkinteger(L, 4);
-  int y = luaL_checkinteger(L, 5);
-  int width = luaL_checkinteger(L, 6);
-  int height = luaL_checkinteger(L, 7);
-  uint32_t color = luaL_checkinteger(L, 8);
-  pixbuf_fill(pixbuf, x, y, width, height, color);
-  return 0;
+  // x, y, w, h are the region of the mask to be blitted
+  // dx, dy are the coordinates of the destination
+
+  rect_t src_rect = rect(x, y, w, h);
+  rect_t dst_rect = rect(dx, dy, w, h);
+
+  rect_t src_bounds = rect(0, 0, src->width, src->height);
+  rect_t dst_bounds = rect(0, 0, dst->width, dst->height);
+
+  // Take care of out of bounds
+  rect_t src_clip = rect_intersection(&src_rect, &src_bounds);
+  rect_t dst_clip = rect_intersection(&dst_rect, &dst_bounds);
+
+  // Compute the intersection of the clipped source and destination
+  rect_t src_clip2 = rect(src_clip.x - x, src_clip.y - y, src_clip.w, src_clip.h);
+  rect_t dst_clip2 = rect(dst_clip.x - dx, dst_clip.y - dy, dst_clip.w, dst_clip.h);
+
+  rect_t clip = rect_intersection(&src_clip2, &dst_clip2);
+
+  if (clip.w <= 0 || clip.h <= 0)
+    return;
+
+  // Cut source buffer
+  pixelbuffer_t src_cut = cut_buffer(src, x + clip.x, y + clip.y, clip.w, clip.h);
+  // Cut destination buffer
+  pixelbuffer_t dst_cut = cut_buffer(dst, dst_clip.x, dst_clip.y, clip.w, clip.h);
+
+  _pixmod_copy(&src_cut, &dst_cut);
 }
-*/
+
+static void _pixmod_blit_color(pixelbuffer_t *mask, pixelbuffer_t *dst, int x, int y, int w, int h, int dx, int dy, uint32_t color)
+{
+  // x, y, w, h are the region of the mask to be blitted
+  // dx, dy are the coordinates of the destination
+
+  rect_t src_rect = rect(x, y, w, h);
+  rect_t dst_rect = rect(dx, dy, w, h);
+
+  rect_t src_bounds = rect(0, 0, mask->width, mask->height);
+  rect_t dst_bounds = rect(0, 0, dst->width, dst->height);
+
+  // Take care of out of bounds
+  rect_t src_clip = rect_intersection(&src_rect, &src_bounds);
+  rect_t dst_clip = rect_intersection(&dst_rect, &dst_bounds);
+
+  // Compute the intersection of the clipped source and destination
+  rect_t src_clip2 = rect(src_clip.x - x, src_clip.y - y, src_clip.w, src_clip.h);
+  rect_t dst_clip2 = rect(dst_clip.x - dx, dst_clip.y - dy, dst_clip.w, dst_clip.h);
+
+  rect_t clip = rect_intersection(&src_clip2, &dst_clip2);
+
+  if (clip.w <= 0 || clip.h <= 0)
+    return;
+
+  // Cut source buffer
+  pixelbuffer_t mask_cut = cut_buffer(mask, x + clip.x, y + clip.y, clip.w, clip.h);
+
+  // Cut destination buffer
+  pixelbuffer_t dst_cut = cut_buffer(dst, dst_clip.x, dst_clip.y, clip.w, clip.h);
+
+  for (int i = 0; i < mask_cut.height; i++)
+  {
+    for (int j = 0; j < mask_cut.width; j++)
+    {
+      uint32_t mask_color = _pixmod_get(&mask_cut, j, i);
+      if (mask_color != 0)
+      {
+        //printf("X");
+        _pixmod_set(&dst_cut, j, i, color);
+      } else {
+        //printf(" ");
+        }
+
+      
+
+    }
+    //printf("\n");
+  }
+}
+
+static void _pixmod_blit_mask(pixelbuffer_t *src, pixelbuffer_t *dst, pixelbuffer_t *mask, int x, int y, int w, int h, int dx, int dy)
+{
+  // source and mask must have the same dimensions
+  if (src->width != mask->width || src->height != mask->height)
+    return;
+
+  // x, y, w, h are the region of the mask to be blitted
+  // dx, dy are the coordinates of the destination
+
+  rect_t src_rect = rect(x, y, w, h);
+  rect_t dst_rect = rect(dx, dy, w, h);
+
+  rect_t src_bounds = rect(0, 0, mask->width, mask->height);
+  rect_t dst_bounds = rect(0, 0, dst->width, dst->height);
+
+  // Take care of out of bounds
+  rect_t src_clip = rect_intersection(&src_rect, &src_bounds);
+  rect_t dst_clip = rect_intersection(&dst_rect, &dst_bounds);
+
+  // Compute the intersection of the clipped source and destination
+  rect_t src_clip2 = rect(src_clip.x - x, src_clip.y - y, src_clip.w, src_clip.h);
+  rect_t dst_clip2 = rect(dst_clip.x - dx, dst_clip.y - dy, dst_clip.w, dst_clip.h);
+
+  rect_t clip = rect_intersection(&src_clip2, &dst_clip2);
+
+  if (clip.w <= 0 || clip.h <= 0)
+    return;
+
+  // Cut source buffer
+  pixelbuffer_t src_cut = cut_buffer(src, x + clip.x, y + clip.y, clip.w, clip.h);
+  // Cut destination buffer
+  pixelbuffer_t dst_cut = cut_buffer(dst, dst_clip.x, dst_clip.y, clip.w, clip.h);
+  // Cut mask buffer
+  pixelbuffer_t mask_cut = cut_buffer(mask, x + clip.x, y + clip.y, clip.w, clip.h);
+
+  for (int i = 0; i < mask_cut.height; i++)
+  {
+    for (int j = 0; j < mask_cut.width; j++)
+    {
+      uint32_t mask_color = _pixmod_get(&mask_cut, j, i);
+      if (mask_color != 0)
+      {
+        uint32_t color = _pixmod_get(&src_cut, j, i);
+        _pixmod_set(&dst_cut, j, i, color);
+      }
+    }
+  }
+}
+
 #ifndef _EMULATOR_MODE_
 
 static int pixmod_set(lua_State *L)
@@ -352,6 +498,32 @@ int fill(uint8_t *data, int width, int height, int bpp, int x, int y, int w, int
   pixelbuffer_t pb = wrap_buffer(data, width, height, bpp, 0, 0);
   uint32_t color = _color_pack(r, g, b);
   _pixmod_fill(&pb, x-1, y-1, w, h, color);
+  return 0;
+}
+
+int blit(uint8_t *src, int src_width, int src_height, int src_bpp, uint8_t *dst, int dst_width, int dst_height, int dst_bpp, int x, int y, int w, int h, int dx, int dy)
+{
+  pixelbuffer_t pb_src = wrap_buffer(src, src_width, src_height, src_bpp, 0, 0);
+  pixelbuffer_t pb_dst = wrap_buffer(dst, dst_width, dst_height, dst_bpp, 0, 0);
+  _pixmod_blit(&pb_src, &pb_dst, x-1, y-1, w, h, dx-1, dy-1);
+  return 0;
+}
+
+int blit_color(uint8_t *mask, int mask_width, int mask_height, int mask_bpp, uint8_t *dst, int dst_width, int dst_height, int dst_bpp, int x, int y, int w, int h, int dx, int dy, int r, int g, int b)
+{
+  pixelbuffer_t pb_target = wrap_buffer(dst, dst_width, dst_height, dst_bpp, 0, 0);
+  pixelbuffer_t pb_mask = wrap_buffer(mask, mask_width, mask_height, mask_bpp, 0, 0);
+  uint32_t color = _color_pack(r, g, b);
+  _pixmod_blit_color(&pb_mask, &pb_target, x-1, y-1, w, h, dx-1, dy-1, color);
+  return 0;
+}
+
+int blit_mask(uint8_t *src, int src_width, int src_height, int src_bpp, uint8_t *dst, int dst_width, int dst_height, int dst_bpp, uint8_t *mask, int mask_width, int mask_height, int x, int y, int w, int h, int dx, int dy)
+{
+  pixelbuffer_t pb_src = wrap_buffer(src, src_width, src_height, src_bpp, 0, 0);
+  pixelbuffer_t pb_dst = wrap_buffer(dst, dst_width, dst_height, dst_bpp, 0, 0);
+  pixelbuffer_t pb_mask = wrap_buffer(mask, mask_width, mask_height, 1, 0, 0);
+  _pixmod_blit_mask(&pb_src, &pb_dst, &pb_mask, x-1, y-1, w, h, dx-1, dy-1);
   return 0;
 }
 

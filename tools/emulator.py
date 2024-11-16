@@ -204,7 +204,6 @@ class Buffer():
             data = data.reshape((int(data.shape[0] / self.channels()), self.channels()))
 
             if data.shape[0] > self._buffer.shape[0] - i:
-                print(data.shape)
                 raise RuntimeError("Out of bounds - index %d not within 1-%d" % (i+1, self._buffer.shape[0]))
 
             buffer_start = min(max(i, 0), self._buffer.shape[0])
@@ -301,7 +300,12 @@ class Operations():
         self._lib.fill.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
         self._lib.fill.restype = None
         
+        self._lib.blit.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.blit.restype = None
         
+        self._lib.blit_color.argtypes = [ctypes.POINTER(ctypes.c_uint8), ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.POINTER(ctypes.c_uint8), 
+                                         ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        self._lib.blit_color.restype = None
         
     def set(self, buffer, w, h, x, y, r, g, b):
         import ctypes
@@ -322,10 +326,35 @@ class Operations():
         import ctypes
         buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
         self._lib.fill(buf, w, h, buffer.channels(), rx, ry, rw, rh, r, g, b)
+        
+    def blit(self, src, src_w, src_h, dst, dst_w, dst_h, x, y, w, h, dx, dy):
+        import ctypes
+        src_buf = src._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        dst_buf = dst._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.blit(src_buf, src_w, src_h, src.channels(), dst_buf, dst_w, dst_h, dst.channels(), x, y, w, h, dx, dy)
+
+    def blit_color(self, src, src_w, src_h, dst, dst_w, dst_h, x, y, w, h, dx, dy, r, g, b):
+        import ctypes
+        src_buf = src._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        dst_buf = dst._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.blit_color(src_buf, src_w, src_h, src.channels(), dst_buf, dst_w, dst_h, dst.channels(), x, y, w, h, dx, dy, r, g, b)
+
+    def blit_mask(self, buffer, buffer2, w, h, x, y, w2, h2, r, g, b):
+        import ctypes
+        buf = buffer._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        buf2 = buffer2._buffer.ctypes.data_as(ctypes.POINTER(ctypes.c_uint8))
+        self._lib.blit_mask(buf, w, h, buffer.channels(), x, y, w2, h2, buf2, r, g, b)
 
 def main():
 
-    name = sys.argv[1]
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Emulator for the Pixelflut firmware")
+    parser.add_argument("name", type=str, help="The name of the tileset to emulate")
+
+    args = parser.parse_args()
+
+    name = args.name
 
     env = Environment(os.path.join(root, "tiles", name), [os.path.join(root, "tiles", name), os.path.join(root, "core")])
 
@@ -333,6 +362,14 @@ def main():
         with open(filename, "r") as source:
             source = source.read()
             lua.execute(source)
+
+    def get_type(obj):
+        if isinstance(obj, Buffer):
+            return b"Buffer"
+        if isinstance(obj, File):
+            return b"File"
+    
+        return lupa.lua_type(obj)
 
     env.lua.globals()[b"pixbuf"] = Buffer
     env.lua.globals()[b"pixmod"] = Operations()
@@ -344,9 +381,15 @@ def main():
 
     os.chdir(os.path.join(root, "tiles", name))
 
+    env.lua.globals()[b"type"] = get_type
+
+
     env.lua.execute('dofile("%s")' % os.path.join(root, "core", "utilities.lua"))
-    env.lua.execute('dofile("%s")' % os.path.join(root, "core", "sprites.lua"))
-    env.lua.execute('dofile("%s")' % os.path.join(root, "core", "font.lua"))
+    env.lua.execute('package.loaded["sprites"] = dofile("%s")' % os.path.join(root, "core", "sprites.lua"))
+    env.lua.execute('package.loaded["font"] = dofile("%s")' % os.path.join(root, "core", "font.lua"))
+
+    env.lua.execute('function load_sprites() return package.loaded["sprites"] end')
+    env.lua.execute('function load_font() return package.loaded["font"] end')
 
     screen = env.lua.eval('Screen.create(20, 20)')    
     main, _ = env.lua.eval('require("%s")' % os.path.join("main"))

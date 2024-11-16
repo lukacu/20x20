@@ -3,6 +3,7 @@
 local function cryptopunks(state, screen)
 
     if state == nil then
+        local Sprites = load_sprites();
         state = {
             sprites = Sprites.open("cryptopunks.dat"),
             count = 0

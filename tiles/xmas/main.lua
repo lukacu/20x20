@@ -9,7 +9,7 @@ local function xmas(state, screen)
             cache = nil,
             count = 0, 
             snow = {},
-            intensity = node.random(10, 40)
+            intensity = node.random(10, 20)
         }
         for i=1, state.intensity do
           state.snow[i] = {node.random(1, screen.width), node.random(1, screen.height), node.random(200, 255)}

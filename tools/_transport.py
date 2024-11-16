@@ -64,8 +64,8 @@ class SerialTransport(AbstractTransport):
             self.serial.flushInput()
         self.serial.write(data)
         sleep(self.delay)
-        if check:
-            self.echocheck(data)
+        #if check:
+        #    self.echocheck(data)
 
     def read(self, length):
         return self.serial.read(length)

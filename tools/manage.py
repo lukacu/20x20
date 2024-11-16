@@ -37,7 +37,11 @@ class Commands(Cmd):
     def do_copy(self, arg):
         unpacker = lambda x,y=None:(x,y)
         file, name = unpacker(*arg.split(" "))
-        run_copy(self._transport, file, name)
+        try:
+            run_copy(self._transport, file, name)
+        except RuntimeError as e:
+            print(e)
+
 
     def do_restart(self, _):
         run_restart(self._transport)
@@ -218,17 +222,14 @@ def run_terminal(transport):
 
         while True:
 
-            terminal = Miniterm(transport, echo=False)
+            terminal = Miniterm(transport, echo=False, filters=["default"])
             terminal.exit_character = chr(0x1b)
             terminal.raw = False
             terminal.set_rx_encoding("UTF-8")
             terminal.set_tx_encoding("UTF-8")
 
             terminal.start()
-
             terminal.join(True)
-
-            #terminal.join()
 
             termios.tcsetattr(fd, termios.TCSADRAIN, defattr)
 
@@ -274,6 +275,7 @@ def run_init(transport):
     format(transport)
     
     copy(transport, os.path.join(root, "..", "core", "main.lua"))
+    copy(transport, os.path.join(root, "..", "core", "utilities.lua"))
     copy(transport, os.path.join(root , "..", "core", "init.lua"))
 
     run_restart(transport)

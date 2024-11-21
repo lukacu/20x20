@@ -1,3 +1,4 @@
+
 -- Brownian motion visualization
 
 local function brownian(state, screen)

@@ -19,4 +19,4 @@ Repository consists of several parts
 
 ## Buidling NodeMCU firmware
 
-Since the code requires custom native modules, the firmware should be built locally using the [https://hub.docker.com/r/marcelstoer/nodemcu-build](nodemcu-build Docker container). Use the `build_firmware.sh` script to build a suitable binary image.
+Since the code requires custom native modules, the firmware can be built locally using the [nodemcu-build](https://hub.docker.com/r/marcelstoer/nodemcu-build/) Docker image. Use the `build_firmware.sh` script found in the `firmware` folder to build the firmware. 

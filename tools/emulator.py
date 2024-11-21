@@ -351,6 +351,7 @@ def main():
     
     parser = argparse.ArgumentParser(description="Emulator for the Pixelflut firmware")
     parser.add_argument("name", type=str, help="The name of the tileset to emulate")
+    parser.add_argument("-s", "--speed", type=int, default=10, help="The speed of the emulator (FPS)")
 
     args = parser.parse_args()
 
@@ -396,6 +397,8 @@ def main():
 
     state = None
 
+    delay = int(1000 / args.speed) if args.speed > 0 else 0
+
     while True:
         state = main(state, screen)
 
@@ -406,7 +409,7 @@ def main():
 
         cv.imshow("Screen", image)
 
-        if cv.waitKey(50) != -1:
+        if cv.waitKey(delay) == 27:
             break
 
 

@@ -42,6 +42,11 @@ do
         pixmod.blit(src, src_w, src_h, screen, self.width, self.height, x, y, w, h, dx, dy)
     end
 
+    function Screen:slide(dx, dy)
+        local screen = self.buffer
+        pixmod.blit(screen, self.width, self.height, screen, self.width, self.height, 1, 1, self.width, self.height, dx+1, dy+1)
+    end
+
     function Screen:blit_color(src, src_w, src_h, x, y, w, h, dx, dy, r, g, b)
         local screen = self.buffer
         pixmod.blit_color(src, src_w, src_h, screen, self.width, self.height, x, y, w, h, dx, dy, r, g, b)

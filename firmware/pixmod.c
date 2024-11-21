@@ -34,16 +34,8 @@ typedef struct rect
   int h;
 } rect_t;
 
-static int max(int a, int b)
-{
-  return a > b ? a : b;
-}
-
-static int min(int a, int b)
-{
-  return a < b ? a : b;
-}
-
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
 
 static rect_t rect(int x, int y, int w, int h)
 {
@@ -173,7 +165,7 @@ static uint32_t _pixmod_get(pixelbuffer_t *pixbuf, int x, int y)
   return 0;
 }
 
-static void _pixmod_set(pixelbuffer_t *pixbuf, int x, int y, uint32_t color)
+static inline void _pixmod_set(pixelbuffer_t *pixbuf, int x, int y, uint32_t color)
 {
   if (x < 0 || x >= pixbuf->width || y < 0 || y >= pixbuf->height)
     return;
@@ -197,7 +189,7 @@ static void _pixmod_set(pixelbuffer_t *pixbuf, int x, int y, uint32_t color)
   }
 }
 
-static void _pixmod_line(pixelbuffer_t *pixbuf, int x0, int y0, int x1, int y1, uint32_t color)
+static inline void _pixmod_line(pixelbuffer_t *pixbuf, int x0, int y0, int x1, int y1, uint32_t color)
 {
   // Draw line using Bresenham's algorithm
   int dx = abs(x1 - x0);
@@ -239,7 +231,6 @@ static void _pixmod_add(pixelbuffer_t *pixbuf, int value)
       r = r + value;
       g = g + value;
       b = b + value;
-      //DEBUG_PRINT("x: %d, y: %d, r: %d, g: %d, b: %d\n", x, y, r, g, b);
       _pixmod_set(pixbuf, x, y, _color_pack(r, g, b));
     }
   }
@@ -258,14 +249,35 @@ static void _pixmod_fill(pixelbuffer_t *pixbuf, int x, int y, int width, int hei
 
 static void _pixmod_copy(pixelbuffer_t *src, pixelbuffer_t *dst)
 {
+
   if (src->width != dst->width || src->height != dst->height)
     return;
-  for (int i = 0; i < src->height; i++)
-  {
-    for (int j = 0; j < src->width; j++)
+
+  // Determine if the buffers overlap, overlap direction and copy direction
+  uint8_t *src_start = src->data;
+  uint8_t *dst_start = dst->data;
+  uint8_t *src_end = src->data + (src->height - 1) * src->stride + src->width * src->bpp;
+  uint8_t *dst_end = dst->data + (dst->height - 1) * dst->stride + dst->width * dst->bpp;
+
+  int reverse = (max(src_start, dst_start) < min(src_end, dst_end)) && (src_start < dst_start);
+
+  if (reverse) {
+    for (int i = src->height - 1; i >= 0; i--)
     {
-      uint32_t color = _pixmod_get(src, j, i);
-      _pixmod_set(dst, j, i, color);
+      for (int j = src->width - 1; j >= 0; j--)
+      {
+        uint32_t color = _pixmod_get(src, j, i);
+        _pixmod_set(dst, j, i, color);
+      }
+    }
+  } else {
+    for (int i = 0; i < src->height; i++)
+    {
+      for (int j = 0; j < src->width; j++)
+      {
+        uint32_t color = _pixmod_get(src, j, i);
+        _pixmod_set(dst, j, i, color);
+      }
     }
   }
 }
@@ -339,16 +351,10 @@ static void _pixmod_blit_color(pixelbuffer_t *mask, pixelbuffer_t *dst, int x, i
       uint32_t mask_color = _pixmod_get(&mask_cut, j, i);
       if (mask_color != 0)
       {
-        //printf("X");
         _pixmod_set(&dst_cut, j, i, color);
       } else {
-        //printf(" ");
         }
-
-      
-
     }
-    //printf("\n");
   }
 }
 
@@ -459,11 +465,81 @@ static int pixmod_fill(lua_State *L)
   return 0;
 }
 
+static int pixmod_blit(lua_State *L)
+{
+  pixbuf *src = pixbuf_from_lua_arg(L, 1);
+  int src_w = luaL_checkinteger(L, 2);
+  int src_h = luaL_checkinteger(L, 3);
+  int src_x = luaL_checkinteger(L, 4);
+  int src_y = luaL_checkinteger(L, 5);
+  int src_w2 = luaL_checkinteger(L, 6);
+  int src_h2 = luaL_checkinteger(L, 7);
+
+  pixbuf *dst = pixbuf_from_lua_arg(L, 8);
+  int dst_w = luaL_checkinteger(L, 9);
+  int dst_h = luaL_checkinteger(L, 10);
+  int dst_x = luaL_checkinteger(L, 11);
+  int dst_y = luaL_checkinteger(L, 12);
+
+  _pixmod_blit(wrap_buffer(src, src_w, src_h, 0, 0), wrap_buffer(dst, dst_w, dst_h, 0, 0), src_x, src_y, src_w2, src_h2, dst_x, dst_y);
+  return 0;
+}
+
+static int pixmod_blit_color(lua_State *L)
+{
+  pixbuf *mask = pixbuf_from_lua_arg(L, 1);
+  int mask_w = luaL_checkinteger(L, 2);
+  int mask_h = luaL_checkinteger(L, 3);
+  int mask_x = luaL_checkinteger(L, 4);
+  int mask_y = luaL_checkinteger(L, 5);
+  int mask_w2 = luaL_checkinteger(L, 6);
+  int mask_h2 = luaL_checkinteger(L, 7);
+
+  pixbuf *dst = pixbuf_from_lua_arg(L, 8);
+  int dst_w = luaL_checkinteger(L, 9);
+  int dst_h = luaL_checkinteger(L, 10);
+  int dst_x = luaL_checkinteger(L, 11);
+  int dst_y = luaL_checkinteger(L, 12);
+
+  uint32_t color = _color_pack(luaL_checkinteger(L, 13), luaL_checkinteger(L, 14), luaL_checkinteger(L, 15));
+
+  _pixmod_blit_color(wrap_buffer(mask, mask_w, mask_h, 0, 0), wrap_buffer(dst, dst_w, dst_h, 0, 0), mask_x, mask_y, mask_w2, mask_h2, dst_x, dst_y, color);
+  return 0;
+}
+
+static int pixmod_blit_mask(lua_State *L)
+{
+  pixbuf *src = pixbuf_from_lua_arg(L, 1);
+  int src_w = luaL_checkinteger(L, 2);
+  int src_h = luaL_checkinteger(L, 3);
+  int src_x = luaL_checkinteger(L, 4);
+  int src_y = luaL_checkinteger(L, 5);
+  int src_w2 = luaL_checkinteger(L, 6);
+  int src_h2 = luaL_checkinteger(L, 7);
+
+  pixbuf *dst = pixbuf_from_lua_arg(L, 8);
+  int dst_w = luaL_checkinteger(L, 9);
+  int dst_h = luaL_checkinteger(L, 10);
+  int dst_x = luaL_checkinteger(L, 11);
+  int dst_y = luaL_checkinteger(L, 12);
+
+  pixbuf *mask = pixbuf_from_lua_arg(L, 13);
+  int mask_w = luaL_checkinteger(L, 14);
+  int mask_h = luaL_checkinteger(L, 15);
+
+  _pixmod_blit_mask(wrap_buffer(src, src_w, src_h, 0, 0), wrap_buffer(dst, dst_w, dst_h, 0, 0), wrap_buffer(mask, mask_w, mask_h, 0, 0), src_x, src_y, src_w2, src_h2, dst_x, dst_y);
+  return 0;
+}
+
+
 LROT_BEGIN(pixmod_map, NULL, 0)
 LROT_FUNCENTRY(set, pixmod_set)
 LROT_FUNCENTRY(line, pixmod_line)
 LROT_FUNCENTRY(add, pixmod_add)
 LROT_FUNCENTRY(fill, pixmod_fill)
+LROT_FUNCENTRY(blit, pixmod_blit)
+LROT_FUNCENTRY(blit_color, pixmod_blit_color)
+LROT_FUNCENTRY(blit_mask, pixmod_blit_mask)
 LROT_END(pixmod_map, NULL, 0)
 
 NODEMCU_MODULE(PIXMOD, "pixmod", pixmod_map, NULL);
